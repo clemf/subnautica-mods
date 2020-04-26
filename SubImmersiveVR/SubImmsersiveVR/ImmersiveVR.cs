@@ -1,13 +1,13 @@
 ﻿using System.Reflection;
 using Harmony;
 
-namespace MotionMovement
+namespace ImmersiveVR
 {
     public static class MainPatcher
     {
         public static void Patch()
         {
-            var harmony = HarmonyInstance.Create("com.test.subnautica.vrmotion");
+            var harmony = HarmonyInstance.Create("com.datoo.subnautica.vrmotion");
             harmony.PatchAll(Assembly.GetExecutingAssembly());
         }
     }
