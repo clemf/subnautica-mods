@@ -1,9 +1,9 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30011.22
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SubImmseriveVR", "SubMotionMovement\SubImmseriveVR.csproj", "{E3D33CAC-96A1-4C26-A11E-75C399F1F5AC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SubImmseriveVR", "SubImmersiveVR\SubImmersiveVR.csproj", "{E3D33CAC-96A1-4C26-A11E-75C399F1F5AC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
