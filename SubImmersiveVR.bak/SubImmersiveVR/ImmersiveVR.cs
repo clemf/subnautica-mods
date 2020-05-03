@@ -1,5 +1,4 @@
-﻿using System;
-using System.Reflection;
+﻿using System.Reflection;
 using Harmony;
 
 namespace ImmersiveVR
@@ -8,7 +7,6 @@ namespace ImmersiveVR
     {
         public static void Patch()
         {
-            Console.WriteLine("Patching started************************************************************************************************");
             var harmony = HarmonyInstance.Create("com.datoo.subnautica.vrmotion");
             harmony.PatchAll(Assembly.GetExecutingAssembly());
         }
