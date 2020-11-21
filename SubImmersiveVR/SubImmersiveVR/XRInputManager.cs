@@ -1,13 +1,13 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR;
-using Harmony;
+using HarmonyLib;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Linq;
 using System;
 
-namespace ImmersiveVR.Patchers
+namespace ImmersiveVR
 {
     enum Controller
     {
@@ -30,7 +30,7 @@ namespace ImmersiveVR.Patchers
             GetDevices();
         }
 
-        static XRInputManager GetXRInputManager()
+        public static XRInputManager GetXRInputManager()
         {
             if (_instance.player == null)
             {
@@ -78,7 +78,7 @@ namespace ImmersiveVR.Patchers
             }
         }
 
-        Transform GetGameTransform(Controller name)
+        public Transform GetGameTransform(Controller name)
         {
             switch (name)
             {
@@ -90,7 +90,7 @@ namespace ImmersiveVR.Patchers
             }
         }
 
-        Vector2 Get(Controller controller, InputFeatureUsage<Vector2> usage)
+        public Vector2 Get(Controller controller, InputFeatureUsage<Vector2> usage)
         {
             InputDevice device = GetDevice(controller);
             Vector2 value = Vector2.zero;
@@ -103,8 +103,25 @@ namespace ImmersiveVR.Patchers
             }
             return value;
         }
-        
-        Quaternion Get(Controller controller, InputFeatureUsage<Quaternion> usage)
+
+        public Vector3 Get(Controller controller, InputFeatureUsage<Vector3> usage)
+        {
+            InputDevice device = GetDevice(controller);
+            Vector3 value = Vector3.zero;
+            if (device != null && device.isValid)
+            {
+                device.TryGetFeatureValue(usage, out value);
+            }
+            else
+            {
+                GetDevices();
+            }
+            Transform parentTransform = GetGameTransform(controller);
+            parentTransform.localPosition = value;
+            return parentTransform.position;
+        }
+
+        public Quaternion Get(Controller controller, InputFeatureUsage<Quaternion> usage)
         {
             InputDevice device = GetDevice(controller);
             Quaternion value = Quaternion.identity;
@@ -116,12 +133,13 @@ namespace ImmersiveVR.Patchers
             {
                 GetDevices();
             }
+            // Sets the rotation of hand input relative to orientation of in-game player
             Transform parentTransform = GetGameTransform(controller);
             parentTransform.localRotation = value;
             return parentTransform.rotation;
         }
 
-        float Get(Controller controller, InputFeatureUsage<float> usage)
+        public float Get(Controller controller, InputFeatureUsage<float> usage)
         {
             InputDevice device = GetDevice(controller);
             float value = 0f;
