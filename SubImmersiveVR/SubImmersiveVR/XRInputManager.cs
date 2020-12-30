@@ -2,9 +2,6 @@
 using UnityEngine;
 using UnityEngine.XR;
 using HarmonyLib;
-using System.Reflection;
-using System.Reflection.Emit;
-using System.Linq;
 using System;
 
 namespace ImmersiveVR
@@ -21,9 +18,6 @@ namespace ImmersiveVR
         private readonly List<InputDevice> xrDevices = new List<InputDevice>();
         public InputDevice leftController;
         public InputDevice rightController;
-        public GameObject gameLeftHand;
-        public GameObject gameRightHand;
-        public Player player;
 
         private XRInputManager()
         {
@@ -32,23 +26,7 @@ namespace ImmersiveVR
 
         public static XRInputManager GetXRInputManager()
         {
-            if (_instance.player == null)
-            {
-                _instance.TryGetPlayer();
-            }
             return _instance;
-        }
-
-        void TryGetPlayer()
-        {
-            player = Utils.GetLocalPlayerComp();
-            if (player != null)
-            {
-                gameRightHand = new GameObject("gameRightHand");
-                gameRightHand.transform.parent = player.camRoot.transform;
-                gameLeftHand = new GameObject("gameLeftHand");
-                gameLeftHand.transform.parent = player.camRoot.transform;
-            }
         }
 
         void GetDevices()
@@ -69,23 +47,12 @@ namespace ImmersiveVR
 
         InputDevice GetDevice(Controller name)
         {
-            switch (name) {
+            switch (name)
+            {
                 case Controller.Left:
                     return leftController;
                 case Controller.Right:
                     return rightController;
-                default: throw new Exception();
-            }
-        }
-
-        public Transform GetGameTransform(Controller name)
-        {
-            switch (name)
-            {
-                case Controller.Left:
-                    return gameLeftHand.transform;
-                case Controller.Right:
-                    return gameRightHand.transform;
                 default: throw new Exception();
             }
         }
@@ -97,7 +64,8 @@ namespace ImmersiveVR
             if (device != null && device.isValid)
             {
                 device.TryGetFeatureValue(usage, out value);
-            } else
+            }
+            else
             {
                 GetDevices();
             }
@@ -116,9 +84,7 @@ namespace ImmersiveVR
             {
                 GetDevices();
             }
-            Transform parentTransform = GetGameTransform(controller);
-            parentTransform.localPosition = value;
-            return parentTransform.position;
+            return value;
         }
 
         public Quaternion Get(Controller controller, InputFeatureUsage<Quaternion> usage)
@@ -133,16 +99,28 @@ namespace ImmersiveVR
             {
                 GetDevices();
             }
-            // Sets the rotation of hand input relative to orientation of in-game player
-            Transform parentTransform = GetGameTransform(controller);
-            parentTransform.localRotation = value;
-            return parentTransform.rotation;
+            return value;
         }
 
         public float Get(Controller controller, InputFeatureUsage<float> usage)
         {
             InputDevice device = GetDevice(controller);
             float value = 0f;
+            if (device != null && device.isValid)
+            {
+                device.TryGetFeatureValue(usage, out value);
+            }
+            else
+            {
+                GetDevices();
+            }
+            return value;
+        }
+
+        public bool Get(Controller controller, InputFeatureUsage<bool> usage)
+        {
+            InputDevice device = GetDevice(controller);
+            bool value = false;
             if (device != null && device.isValid)
             {
                 device.TryGetFeatureValue(usage, out value);
@@ -168,154 +146,203 @@ namespace ImmersiveVR
             return hasController;
         }
 
-        [HarmonyPatch(typeof(VRUtil), nameof(VRUtil.GetLoadedSDK))]
-        internal class VRUtilPatch
+        public bool GetXRInput(KeyCode key)
         {
-            [HarmonyPrefix]
-            public static void Prefix()
+            switch (key)
             {
-                Console.WriteLine("XRSettings loadedDeviceName: " + XRSettings.loadedDeviceName);
-                Console.WriteLine("XRSettings stereoRenderingMode: " + XRSettings.stereoRenderingMode);
-                Console.WriteLine("XRSettings supportedDevices:");
-                foreach (string device in XRSettings.supportedDevices) {
-                    Console.WriteLine(device);
-                }
+                case KeyCode.JoystickButton0:
+                    // ControllerButtonA
+                    return Get(Controller.Right, CommonUsages.primaryButton);
+                case KeyCode.JoystickButton1:
+                    // ControllerButtonB
+                    return Get(Controller.Right, CommonUsages.secondaryButton);
+                case KeyCode.JoystickButton2:
+                    // ControllerButtonX
+                    return Get(Controller.Left, CommonUsages.primaryButton);
+                case KeyCode.JoystickButton3:
+                    // ControllerButtonY
+                    return Get(Controller.Left, CommonUsages.secondaryButton);
+                case KeyCode.JoystickButton4:
+                    // ControllerButtonLeftBumper
+                    return Get(Controller.Left, CommonUsages.gripButton);
+                case KeyCode.JoystickButton5:
+                    // ControllerButtonRightBumper
+                    return Get(Controller.Right, CommonUsages.gripButton);
+                case KeyCode.JoystickButton6:
+                    // ControllerButtonBack - reservered by "oculus" button
+                    return false;
+                case KeyCode.JoystickButton7:
+                    // ControllerButtonHome
+                    return Get(Controller.Left, CommonUsages.menuButton);
+                case KeyCode.JoystickButton8:
+                    // ControllerButtonLeftStick
+                    return Get(Controller.Left, CommonUsages.primary2DAxisClick);
+                case KeyCode.JoystickButton9:
+                    // ControllerButtonRightStick
+                    return Get(Controller.Right, CommonUsages.primary2DAxisClick);
+                default:
+                    return false;
             }
         }
 
         [HarmonyPatch(typeof(GameInput), "UpdateAxisValues")]
         internal class UpdateAxisValuesPatch
         {
-            [HarmonyTranspiler]
-            public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            public static bool Prefix(bool useKeyboard, bool useController, GameInput ___instance)
             {
-                short step = 0;
-                MethodInfo checkXR = typeof(UpdateAxisValuesPatch).GetMethod(nameof(UpdateAxisValuesPatch.CheckUseXRInput));
-                MethodInfo getXRValues = typeof(UpdateAxisValuesPatch).GetMethod(nameof(UpdateAxisValuesPatch.GetXRAxisValues));
-                MethodInfo ovrInputCheck = typeof(GameInput).GetMethod("GetUseOculusInputManager", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-                FieldInfo axisValues = typeof(GameInput).GetField("axisValues", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-
-                foreach (CodeInstruction instruction in instructions)
+                XRInputManager xrInput = GetXRInputManager();
+                if (!xrInput.hasControllers())
                 {
-                    if (step == 0)
+                    return true;
+                }
+
+                for (int i = 0; i < GameInput.axisValues.Length; i++)
+                {
+                    GameInput.axisValues[i] = 0f;
+                }
+                if (useController)
+                {
+                    Vector2 vector = xrInput.Get(Controller.Left, CommonUsages.primary2DAxis);
+                    GameInput.axisValues[2] = vector.x;
+                    GameInput.axisValues[3] = -vector.y;
+                    Vector2 vector2 = xrInput.Get(Controller.Right, CommonUsages.primary2DAxis);
+                    GameInput.axisValues[0] = vector2.x;
+                    GameInput.axisValues[1] = -vector2.y;
+                    // TODO: Use deadzone?
+                    GameInput.axisValues[4] = xrInput.Get(Controller.Left, CommonUsages.trigger).CompareTo(0.3f);
+                    GameInput.axisValues[5] = xrInput.Get(Controller.Right, CommonUsages.trigger).CompareTo(0.3f);
+                }
+                if (useKeyboard)
+                {
+                    GameInput.axisValues[10] = Input.GetAxis("Mouse ScrollWheel");
+                    GameInput.axisValues[8] = Input.GetAxisRaw("Mouse X");
+                    GameInput.axisValues[9] = Input.GetAxisRaw("Mouse Y");
+                }
+                for (int j = 0; j < GameInput.axisValues.Length; j++)
+                {
+                    GameInput.AnalogAxis axis = (GameInput.AnalogAxis)j;
+                    GameInput.Device deviceForAxis = ___instance.GetDeviceForAxis(axis);
+                    float f = GameInput.lastAxisValues[j] - GameInput.axisValues[j];
+                    GameInput.lastAxisValues[j] = GameInput.axisValues[j];
+                    if (deviceForAxis != GameInput.lastDevice)
                     {
-                        // Replace OVRInputManager check with our own
-                        if (instruction.opcode == OpCodes.Call && instruction.operand.Equals(ovrInputCheck))
+                        float num = 0.1f;
+                        if (Mathf.Abs(f) > num)
                         {
-                            step++;
-                            yield return new CodeInstruction(OpCodes.Call, checkXR);
-                        } else
-                        {
-                            yield return instruction;
-                        }
-                    }
-                    else if (step == 1)
-                    {
-                        // Handle result on stack
-                        step++;
-                        yield return instruction;
-                    } else if (step == 2)
-                    {
-                        // Load instance onto the stack
-                        step++;
-                        yield return new CodeInstruction(OpCodes.Ldarg_0);
-                    }
-                    else if (step == 3)
-                    {
-                        // Set axis values from XRInput
-                        step++;
-                        yield return new CodeInstruction(OpCodes.Call, getXRValues);
-                    }
-                    else if (step == 4)
-                    {
-                        // No-op existing axisValue assignments until end of conditional block
-                        if (instruction.opcode == OpCodes.Br)
-                        {
-                            step++;
-                            yield return instruction;
+                            if (!PlatformUtils.isConsolePlatform)
+                            {
+                                GameInput.lastDevice = deviceForAxis;
+                            }
                         }
                         else
                         {
-                            instruction.opcode = OpCodes.Nop;
-                            yield return instruction;
+                            GameInput.axisValues[j] = 0f;
+                        }
+                    }
+                }
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(GameInput), "UpdateKeyInputs")]
+        internal class UpdateKeyInputsPatch {
+            public static bool Prefix(bool useKeyboard, bool useController)
+            {
+                XRInputManager xrInput = GetXRInputManager();
+                if (!xrInput.hasControllers())
+                {
+                    return true;
+                }
+
+                float unscaledTime = Time.unscaledTime;
+                for (int i = 0; i < GameInput.inputs.Count; i++)
+                {
+                    GameInput.InputState inputState = default;
+                    GameInput.InputState prevInputState = GameInput.inputStates[i];
+                    inputState.timeDown = prevInputState.timeDown;
+                    bool wasHeld = (prevInputState.flags & GameInput.InputStateFlags.Held) > 0U;
+
+                    GameInput.Input currentInput = GameInput.inputs[i];
+                    GameInput.Device device = currentInput.device;
+                    KeyCode key = currentInput.keyCode;
+
+                    if (key != KeyCode.None)
+                    {
+                        bool pressed = xrInput.GetXRInput(key);
+                        GameInput.InputStateFlags prevState = GameInput.inputStates[i].flags;
+                        if (pressed && (prevState == GameInput.InputStateFlags.Held && prevState == GameInput.InputStateFlags.Down))
+                        {
+                            inputState.flags |= GameInput.InputStateFlags.Held;
+                        }
+                        if (pressed && prevState == GameInput.InputStateFlags.Up)
+                        {
+                            inputState.flags |= GameInput.InputStateFlags.Down;
+                        }
+                        if (!pressed)
+                        {
+                            inputState.flags |= GameInput.InputStateFlags.Up;
+                        }
+                        if (inputState.flags != 0U && !PlatformUtils.isConsolePlatform && (GameInput.controllerEnabled || device != GameInput.Device.Controller))
+                        {
+                            GameInput.lastDevice = device;
                         }
                     }
                     else
                     {
-                        yield return instruction;
-                    }
-                }
-            }
-
-            public static bool CheckUseXRInput()
-            {
-                XRInputManager xrInput = GetXRInputManager();
-                return xrInput.hasControllers();
-            }
-
-            private static Traverse axisValues;
-            public static void GetXRAxisValues(GameInput instance)
-            {
-                if (axisValues == null)
-                {
-                    axisValues = Traverse.Create(instance).Field("axisValues");
-                }
-                XRInputManager xrInput = GetXRInputManager();
-                float[] newValues = axisValues.GetValue<float[]>();
-                Vector2 vector = xrInput.Get(Controller.Left, CommonUsages.primary2DAxis);
-                newValues[2] = vector.x;
-                newValues[3] = -vector.y;
-                Vector2 vector2 = xrInput.Get(Controller.Right, CommonUsages.primary2DAxis);
-                newValues[0] = vector2.x;
-                newValues[1] = -vector2.y;
-                newValues[4] = xrInput.Get(Controller.Left, CommonUsages.trigger);
-                newValues[5] = xrInput.Get(Controller.Right, CommonUsages.trigger); ;
-                newValues[6] = 0f;
-                newValues[7] = 0f;
-                axisValues.SetValue(newValues);
-            }
-        }
-
-        [HarmonyPatch(typeof(UnderwaterMotor))]
-        [HarmonyPatch("UpdateMove")]
-        public static class UnderwatermotorUpdateMove
-        {
-            static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-            {
-                MethodInfo getHandRotation = typeof(UnderwatermotorUpdateMove).GetMethod(nameof(UnderwatermotorUpdateMove.GetHandRotation));
-                int startIndex = -1, endIndex = -1;
-                var codes = new List<CodeInstruction>(instructions);
-                for (int i = 0; i < codes.Count; i++)
-                {
-                    if (codes[i].opcode == OpCodes.Ldarg_0)
-                    {
-                        if (codes[i + 1].opcode == OpCodes.Ldfld && codes[i + 1].operand is FieldInfo fieldInfo && fieldInfo.Name == nameof(UnderwaterMotor.playerController))
+                        float axisValue = GameInput.axisValues[(int)currentInput.axis];
+                        bool isPressed;
+                        if (GameInput.inputs[i].axisPositive)
                         {
-                            if (codes[i + 2].opcode == OpCodes.Callvirt && codes[i + 2].operand is MethodInfo methodInfo1 && methodInfo1.Name == "get_forwardReference")
-                            {
-                                if (codes[i + 3].opcode == OpCodes.Callvirt && codes[i + 3].operand is MethodInfo methodInfo2 && methodInfo2.Name == "get_rotation")
-                                {
-                                    startIndex = i;
-                                    endIndex = i + 3;
-                                }
-                            }
+                            isPressed = (axisValue > currentInput.axisDeadZone);
+                        }
+                        else
+                        {
+                            isPressed = (axisValue < -currentInput.axisDeadZone);
+                        }
+                        if (isPressed)
+                        {
+                            inputState.flags |= GameInput.InputStateFlags.Held;
+                        }
+                        if (isPressed && !wasHeld)
+                        {
+                            inputState.flags |= GameInput.InputStateFlags.Down;
+                        }
+                        if (!isPressed && wasHeld)
+                        {
+                            inputState.flags |= GameInput.InputStateFlags.Up;
                         }
                     }
+
+                    if ((inputState.flags & GameInput.InputStateFlags.Down) != 0U)
+                    {
+                        int lastIndex = GameInput.lastInputPressed[(int)device];
+                        int newIndex = i;
+                        inputState.timeDown = unscaledTime;
+                        if (lastIndex > -1)
+                        {
+                            GameInput.Input lastInput = GameInput.inputs[lastIndex];
+                            bool isSameTime = inputState.timeDown == GameInput.inputStates[lastIndex].timeDown;
+                            bool lastAxisIsGreater = Mathf.Abs(GameInput.axisValues[(int)lastInput.axis]) > Mathf.Abs(GameInput.axisValues[(int)currentInput.axis]);
+                            if (isSameTime && lastAxisIsGreater)
+                            {
+                                newIndex = lastIndex;
+                            }
+                        }
+                        GameInput.lastInputPressed[(int)device] = newIndex;
+                    }
+
+                    if ((device == GameInput.Device.Controller && !useController) || (device == GameInput.Device.Keyboard && !useKeyboard))
+                    {
+                        inputState.flags = 0U;
+                        if (wasHeld)
+                        {
+                            inputState.flags |= GameInput.InputStateFlags.Up;
+                        }  
+                    }
+                    GameInput.inputStates[i] = inputState;
                 }
-                if (startIndex > -1 && endIndex > -1)
-                {
-                    codes[startIndex].opcode = OpCodes.Nop;
-                    codes[startIndex + 1].opcode = OpCodes.Nop;
-                    codes[startIndex + 2].opcode = OpCodes.Nop;
-                    codes[endIndex].opcode = OpCodes.Call;
-                    codes[endIndex].operand = getHandRotation;
-                }
-                return codes.AsEnumerable();
-            }
-            public static Quaternion GetHandRotation()
-            {
-                XRInputManager xrInput = GetXRInputManager();
-                return xrInput.Get(Controller.Left, CommonUsages.deviceRotation);
+
+                return false;
             }
         }
     }

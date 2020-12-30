@@ -3,6 +3,8 @@ using RootMotion.FinalIK;
 using HarmonyLib;
 using UnityEngine.XR;
 using System;
+using UnityEngine.Playables;
+using UnityEngine.Animations;
 
 namespace ImmersiveVR
 {
@@ -12,15 +14,16 @@ namespace ImmersiveVR
         public ArmsController armsController;
         public Player player;
         public FullBodyBipedIK ik;
+        public Avatar avatar;
 
-        string editSide = "left";
-        string editType = "position";
+        string editSide = "right";
+        string editType = "rotation";
         string editCoord = "x";
 
         // 0f, -0.13f, -0.14f
-        public float leftPosX = 0f;
-        public float leftPosY = -0.13f;
-        public float leftPosZ = -0.14f;
+        public float leftPosX = 0.006f;
+        public float leftPosY = -0.08f;
+        public float leftPosZ = -0.07f;
 
         // 270f, 90f, 0f
         public float leftRotX = 270f;
@@ -33,9 +36,11 @@ namespace ImmersiveVR
         public float rightPosZ = -0.14f;
 
         // 35f, 190f, 270f
-        public float rightRotX = 35f;
+        public float rightRotX = 20f;
         public float rightRotY = 190f;
         public float rightRotZ = 270f;
+
+        public Vector3 scale;
 
         private XRArmsController()
         {
@@ -51,6 +56,7 @@ namespace ImmersiveVR
             armsController = controller;
             player = Utils.GetLocalPlayerComp();
             ik = controller.GetComponent<FullBodyBipedIK>();
+            scale = MainCameraControl.main.viewModel.localScale;
         }
 
         public void setEdit()
@@ -77,11 +83,15 @@ namespace ImmersiveVR
                 {
                     editType = "rotation";
                 }
+                if (Input.GetKey(KeyCode.D))
+                {
+                    editType = "scale";
+                }
                 if (Input.GetKey(KeyCode.Q))
                 {
                     editSide = "left";
                 }
-                if (Input.GetKey(KeyCode.E))
+                if (Input.GetKey(KeyCode.W))
                 {
                     editSide = "right";
                 }
@@ -92,13 +102,13 @@ namespace ImmersiveVR
         {
             if (Input.GetKey(KeyCode.RightControl))
             {
-                if(Input.GetKey(KeyCode.UpArrow))
+                if (Input.GetKey(KeyCode.UpArrow))
                 {
-                    setEditCoord(0.1f);
+                    setEditCoord(0.1f * Time.deltaTime);
                 }
-                if(Input.GetKey(KeyCode.DownArrow))
+                if (Input.GetKey(KeyCode.DownArrow))
                 {
-                    setEditCoord(-0.1f);
+                    setEditCoord(-0.1f * Time.deltaTime);
                 }
             }
         }
@@ -121,7 +131,7 @@ namespace ImmersiveVR
             {
                 if (editType == "position")
                 {
-                    if ( editCoord == "x")
+                    if (editCoord == "x")
                     {
                         leftPosX += edit;
                     }
@@ -183,28 +193,62 @@ namespace ImmersiveVR
                     }
                 }
             }
+            if (editType == "scale")
+            {
+                scale += new Vector3(edit, edit, edit);
+            }
         }
 
-        public void UpdateHandPositions()
+        public void logAnimations()
+        {
+            AnimatorClipInfo[] anims = Player.main.playerAnimator.GetCurrentAnimatorClipInfo(0);
+            foreach (AnimatorClipInfo info in anims)
+            {
+                QModManager.Utility.Logger.Log(0, info.clip.name, null, true);
+            }
+        }
+
+/*        public void UpdateHandPositions()
         {
             setEdit();
             editHandCoord();
             printHandCoord();
+            //logAnimations();
+
+            MainCameraControl.main.viewModel.localScale = scale;
 
             XRInputManager xrInput = XRInputManager.GetXRInputManager();
             Vector3 leftHandPos = xrInput.Get(Controller.Left, CommonUsages.devicePosition);
             Quaternion leftHandRot = xrInput.Get(Controller.Left, CommonUsages.deviceRotation);
             Vector3 rightHandPos = xrInput.Get(Controller.Right, CommonUsages.devicePosition);
             Quaternion rightHandRot = xrInput.Get(Controller.Right, CommonUsages.deviceRotation);
-            
+
             Transform rightHand = xrInput.GetGameTransform(Controller.Right);
             rightHand.localPosition += new Vector3(rightPosX, rightPosY, rightPosZ);
             rightHand.localRotation *= Quaternion.Euler(rightRotX, rightRotY, rightRotZ);
             ik.solver.rightHandEffector.target = rightHand;
+            ik.solver.rightHandEffector.positionWeight = 1f;
+
             Transform leftHand = xrInput.GetGameTransform(Controller.Left);
             leftHand.localPosition += new Vector3(leftPosX, leftPosY, leftPosZ);
             leftHand.localRotation *= Quaternion.Euler(leftRotX, leftRotY, leftRotZ);
-            ik.solver.leftHandEffector.target = leftHand;
+            ik.references.leftHand.localRotation = leftHand.localRotation;
+            ik.references.leftHand.localPosition = leftHand.localPosition;
+*//*            ik.solver.leftHandEffector.target = leftHand;
+            ik.solver.leftHandEffector.positionWeight = 1f;*//*
+
+        }*/
+
+        public void disableArmAnimations()
+        {
+            Animator anim = player.playerAnimator;
+            Transform leftLowerArm = ik.references.leftForearm;
+            AvatarMask mask = new AvatarMask();
+            mask.AddTransformPath(leftLowerArm);
+            PlayableGraph graph = player.playerAnimator.playableGraph;
+            AnimationPlayableOutput playableOutput = AnimationPlayableOutput.Create(graph, "LayerMixer", anim);
+            AnimationMixerPlayable mixer = AnimationMixerPlayable.Create(graph, 2);
+            playableOutput.SetSourcePlayable(mixer);
         }
 
         [HarmonyPatch(typeof(ArmsController))]
@@ -231,6 +275,7 @@ namespace ImmersiveVR
             [HarmonyPostfix]
             public static void Postfix()
             {
+                return;
                 if (!XRSettings.enabled)
                 {
                     return;
@@ -241,9 +286,25 @@ namespace ImmersiveVR
 
                 if ((Player.main.motorMode != Player.MotorMode.Vehicle && !player.cinematicModeActive))
                 {
-                    xrArms.UpdateHandPositions();
+                    //xrArms.UpdateHandPositions();
                 }
             }
         }
+
+/*        [HarmonyPatch(typeof(MainCameraControl))]
+        [HarmonyPatch("Update")]
+        class MainCameraContral_Update_Patch
+        {
+
+            [HarmonyPostfix]
+            public static void Postfix(MainCameraControl __instance)
+            {
+                if (!XRSettings.enabled)
+                {
+                    return;
+                }
+                __instance.viewModel.transform.localPosition = __instance.gameObject.FindAncestor<PlayerController>().forwardReference.position;
+            }
+        }*/
     }
 }
